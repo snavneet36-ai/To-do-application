@@ -1,0 +1,129 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - bootstrap/*
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - bootstrap/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  terraformVersion: '1.15.8'
+  workingDirectory: '$(System.DefaultWorkingDirectory)/bootstrap'
+
+stages:
+
+# ==========================================
+# Stage 1 - Terraform Validate & Plan
+# ==========================================
+- stage: TerraformPlan
+  displayName: 'Bootstrap - Terraform Plan'
+
+  jobs:
+  - job: Plan
+    displayName: 'Terraform Init Validate Plan'
+
+    steps:
+
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+
+    - task: AzureCLI@2
+      displayName: 'Terraform Init'
+      inputs:
+        azureSubscription: 'To-do-application'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          terraform init
+
+    - task: AzureCLI@2
+      displayName: 'Terraform Validate'
+      inputs:
+        azureSubscription: 'To-do-application'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          terraform validate
+
+    - task: AzureCLI@2
+      displayName: 'Terraform Plan'
+      inputs:
+        azureSubscription: 'To-do-application'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          terraform plan -out=tfplan
+
+    - publish: '$(workingDirectory)/tfplan'
+      artifact: bootstrap-tfplan
+      displayName: 'Publish Terraform Plan'
+
+
+# ==========================================
+# Stage 2 - Terraform Apply
+# ==========================================
+- stage: TerraformApply
+  displayName: 'Bootstrap - Terraform Apply'
+  dependsOn: TerraformPlan
+  condition: succeeded()
+
+  jobs:
+
+  - deployment: Apply
+    displayName: 'Apply Bootstrap Infrastructure'
+    environment: 'terraform-bootstrap'
+    
+    strategy:
+      runOnce:
+        deploy:
+
+          steps:
+
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          - download: current
+            artifact: bootstrap-tfplan
+            displayName: 'Download Terraform Plan'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Init'
+            inputs:
+              azureSubscription: 'To-do-application'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                terraform init
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Apply'
+            inputs:
+              azureSubscription: 'To-do-application'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                terraform apply -auto-approve tfplan
