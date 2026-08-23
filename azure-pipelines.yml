@@ -86,15 +86,14 @@ stages:
   condition: succeeded()
 
   jobs:
-
   - deployment: Apply
     displayName: 'Apply Bootstrap Infrastructure'
+
     environment: 'terraform-bootstrap'
-    
+
     strategy:
       runOnce:
         deploy:
-
           steps:
 
           - checkout: self
@@ -126,4 +125,4 @@ stages:
               scriptLocation: 'inlineScript'
               workingDirectory: '$(workingDirectory)'
               inlineScript: |
-                terraform apply -auto-approve tfplan
+                terraform apply -auto-approve "$(Pipeline.Workspace)/bootstrap-tfplan/tfplan"
