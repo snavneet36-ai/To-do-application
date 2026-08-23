@@ -1,0 +1,161 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - environments/dev/*
+      - module/*
+      - azure-pipelines-infra.yml
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - environments/dev/*
+      - module/*
+      - azure-pipelines-infra.yml
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  terraformVersion: '1.15.8'
+  workingDirectory: '$(System.DefaultWorkingDirectory)/environments/dev'
+
+  # Remote Terraform Backend
+  backendResourceGroup: 'rg-terraform-state'
+  backendStorageAccount: 'sttfstateazuretododev'
+  backendContainer: 'tfstate'
+  backendKey: 'dev.tfstate'
+
+stages:
+
+# ==========================================================
+# STAGE 1 - TERRAFORM PLAN
+# ==========================================================
+
+- stage: TerraformPlan
+  displayName: 'Dev - Terraform Plan'
+
+  jobs:
+  - job: Plan
+    displayName: 'Terraform Init Validate Plan'
+
+    steps:
+
+    - checkout: self
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+
+    # Terraform Init - Remote Backend
+    - task: AzureCLI@2
+      displayName: 'Terraform Init'
+      inputs:
+        azureSubscription: 'To-do-application'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          terraform init \
+            -backend-config="resource_group_name=$(backendResourceGroup)" \
+            -backend-config="storage_account_name=$(backendStorageAccount)" \
+            -backend-config="container_name=$(backendContainer)" \
+            -backend-config="key=$(backendKey)"
+
+    # Terraform Validate
+    - task: AzureCLI@2
+      displayName: 'Terraform Validate'
+      inputs:
+        azureSubscription: 'To-do-application'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          terraform validate
+
+    # Terraform Plan
+    - task: AzureCLI@2
+      displayName: 'Terraform Plan'
+      inputs:
+        azureSubscription: 'To-do-application'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: '$(workingDirectory)'
+        inlineScript: |
+          terraform plan -out=tfplan
+
+    # Publish Plan
+    - publish: '$(workingDirectory)/tfplan'
+      artifact: dev-tfplan
+      displayName: 'Publish Terraform Plan'
+
+
+# ==========================================================
+# STAGE 2 - TERRAFORM APPLY
+# ==========================================================
+
+- stage: TerraformApply
+  displayName: 'Dev - Terraform Apply'
+
+  dependsOn: TerraformPlan
+
+  condition: succeeded()
+
+  jobs:
+
+  - deployment: Apply
+    displayName: 'Apply Dev Infrastructure'
+
+    environment: 'terraform-dev'
+
+    strategy:
+      runOnce:
+        deploy:
+
+          steps:
+
+          - checkout: self
+
+          # Install Terraform
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          # Download Plan Artifact
+          - download: current
+            artifact: dev-tfplan
+            displayName: 'Download Terraform Plan'
+
+          # Terraform Init
+          - task: AzureCLI@2
+            displayName: 'Terraform Init'
+            inputs:
+              azureSubscription: 'To-do-application'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                terraform init \
+                  -backend-config="resource_group_name=$(backendResourceGroup)" \
+                  -backend-config="storage_account_name=$(backendStorageAccount)" \
+                  -backend-config="container_name=$(backendContainer)" \
+                  -backend-config="key=$(backendKey)"
+
+          # Terraform Apply
+          - task: AzureCLI@2
+            displayName: 'Terraform Apply'
+            inputs:
+              azureSubscription: 'To-do-application'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                terraform apply -auto-approve "$(Pipeline.Workspace)/dev-tfplan/tfplan"
