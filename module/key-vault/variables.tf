@@ -33,3 +33,13 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "private_endpoint_subnet_id" {
+  description = "Subnet ID for Key Vault private endpoint"
+  type        = string
+}
+
+variable "virtual_network_id" {
+  description = "Virtual network ID for the Key Vault private DNS link"
+  type        = string
+}

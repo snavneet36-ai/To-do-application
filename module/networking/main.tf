@@ -85,3 +85,11 @@ resource "azurerm_subnet" "sql_vm" {
 
   address_prefixes = var.sql_vm_subnet_address_prefixes
 }
+resource "azurerm_subnet" "private_endpoint" {
+  name                 = var.private_endpoint_subnet_name
+  resource_group_name  = var.resource_group_name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = var.private_endpoint_subnet_address_prefixes
+
+  private_endpoint_network_policies = "Disabled"
+}

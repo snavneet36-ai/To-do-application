@@ -52,3 +52,11 @@ sql_vm_size = "Standard_B2s"
 sql_vm_admin_username = "sqladmin"
 
 
+private_endpoint_subnet_name = "snet-privateendpoint-dev"
+
+private_endpoint_subnet_address_prefixes = [
+  "10.10.4.0/24"
+]
+
+sql_vm_password_expiration_date = "2027-08-24T00:00:00Z"
+

@@ -96,3 +96,12 @@ variable "sql_vm_subnet_address_prefixes" {
   type        = list(string)
 }
 
+variable "private_endpoint_subnet_name" {
+  description = "Subnet name for private endpoints"
+  type        = string
+}
+
+variable "private_endpoint_subnet_address_prefixes" {
+  description = "Address prefixes for private endpoint subnet"
+  type        = list(string)
+}

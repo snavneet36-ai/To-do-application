@@ -38,3 +38,8 @@ output "sql_vm_subnet_id" {
   value       = azurerm_subnet.sql_vm.id
 }
 
+output "private_endpoint_subnet_id" {
+  description = "Private endpoint subnet ID"
+  value       = azurerm_subnet.private_endpoint.id
+}
+

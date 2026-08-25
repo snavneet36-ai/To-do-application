@@ -67,6 +67,8 @@ resource "azurerm_windows_virtual_machine" "sql_vm" {
 
   provision_vm_agent = true
 
+  encryption_at_host_enabled = true
+
   # enable_automatic_updates = true :- not available for 5.) provider 
 
   patch_mode = "AutomaticByOS"

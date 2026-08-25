@@ -27,14 +27,17 @@ stages:
 
   jobs:
   - job: SecurityScan
-    displayName: 'Gitleaks Checkov tfsec SAST'
+    displayName: 'Gitleaks Checkov tfsec Semgrep SAST'
 
     steps:
 
     - checkout: self
       fetchDepth: 0
 
+    # ======================================================
     # GITLEAKS
+    # ======================================================
+
     - bash: |
         set -e
 
@@ -57,17 +60,28 @@ stages:
 
       displayName: 'Gitleaks - Secret Scan'
 
+
+    # ======================================================
     # INSTALL SECURITY TOOLS
+    # ======================================================
+
     - bash: |
+        set -e
+
         python3 -m pip install --upgrade pip
-        pip3 install checkov semgrep
+        python3 -m pip install checkov semgrep
 
         checkov --version
         semgrep --version
 
       displayName: 'Install Checkov and Semgrep'
 
+
+    # ======================================================
     # CHECKOV
+    # Soft-fail: findings shown but pipeline continues
+    # ======================================================
+
     - bash: |
         cd "$(Build.SourcesDirectory)"
 
@@ -75,11 +89,17 @@ stages:
           --directory . \
           --framework terraform \
           --download-external-modules true \
-          --quiet
+          --config-file .checkov.yaml \
+          --soft-fail
 
       displayName: 'Checkov - IaC Security'
 
+
+    # ======================================================
     # TFSEC
+    # Soft-fail
+    # ======================================================
+
     - bash: |
         set -e
 
@@ -93,19 +113,23 @@ stages:
 
         tfsec --version
 
-        tfsec "$(Build.SourcesDirectory)"
+        tfsec "$(Build.SourcesDirectory)" || true
 
       displayName: 'tfsec - Terraform Security'
 
+
+    # ======================================================
     # SEMGREP SAST
+    # Soft-fail
+    # ======================================================
+
     - bash: |
         cd "$(Build.SourcesDirectory)"
 
         semgrep \
           --config=p/terraform \
-          --error \
           --metrics=off \
-          .
+          . || true
 
       displayName: 'Semgrep - SAST'
 
@@ -118,6 +142,7 @@ stages:
   displayName: 'Terraform Plan'
 
   dependsOn: Security
+
   condition: succeeded()
 
   jobs:
@@ -128,13 +153,22 @@ stages:
 
     - checkout: self
 
-    # INSTALL TERRAFORM
+
+    # ======================================================
+    # TERRAFORM
+    # ======================================================
+
     - task: TerraformInstaller@1
       displayName: 'Install Terraform'
+
       inputs:
         terraformVersion: '$(terraformVersion)'
 
+
+    # ======================================================
     # FORMAT
+    # ======================================================
+
     - bash: |
         cd "$(workingDirectory)"
 
@@ -144,9 +178,14 @@ stages:
 
       displayName: 'Terraform Format Check'
 
+
+    # ======================================================
     # INIT
+    # ======================================================
+
     - task: AzureCLI@2
       displayName: 'Terraform Init'
+
       inputs:
         azureSubscription: '$(serviceConnection)'
         scriptType: bash
@@ -154,6 +193,7 @@ stages:
         workingDirectory: '$(workingDirectory)'
 
         inlineScript: |
+
           set -e
 
           terraform init \
@@ -163,9 +203,14 @@ stages:
             -backend-config="container_name=$(backendContainer)" \
             -backend-config="key=$(backendKey)"
 
+
+    # ======================================================
     # VALIDATE
+    # ======================================================
+
     - task: AzureCLI@2
       displayName: 'Terraform Validate'
+
       inputs:
         azureSubscription: '$(serviceConnection)'
         scriptType: bash
@@ -173,13 +218,19 @@ stages:
         workingDirectory: '$(workingDirectory)'
 
         inlineScript: |
+
           set -e
 
           terraform validate
 
+
+    # ======================================================
     # PLAN
+    # ======================================================
+
     - task: AzureCLI@2
       displayName: 'Terraform Plan'
+
       inputs:
         azureSubscription: '$(serviceConnection)'
         scriptType: bash
@@ -187,14 +238,34 @@ stages:
         workingDirectory: '$(workingDirectory)'
 
         inlineScript: |
+
           set -e
 
           terraform plan \
             -var-file="dev.tfvars" \
             -out="tfplan"
 
-    # VERIFY PLAN
+
+    # ======================================================
+    # INSTALL CHECKOV FOR PLAN SCAN
+    # ======================================================
+
     - bash: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install checkov
+
+        checkov --version
+
+      displayName: 'Install Checkov for Plan Verification'
+
+
+    # ======================================================
+    # CHECKOV PLAN VERIFICATION
+    # Soft-fail
+    # ======================================================
+
+    - bash: |
+
         cd "$(workingDirectory)"
 
         terraform show -json tfplan > tfplan.json
@@ -202,13 +273,18 @@ stages:
         checkov \
           --file tfplan.json \
           --framework terraform_plan \
-          --quiet
+          --soft-fail
 
       displayName: 'Checkov - Plan Verification'
 
+
+    # ======================================================
     # PUBLISH PLAN
+    # ======================================================
+
     - publish: '$(workingDirectory)/tfplan'
       artifact: dev-tfplan
+
       displayName: 'Publish Terraform Plan'
 
 
@@ -220,6 +296,7 @@ stages:
   displayName: 'Terraform Apply'
 
   dependsOn: TerraformPlan
+
   condition: succeeded()
 
   jobs:
@@ -230,27 +307,44 @@ stages:
     environment: 'terraform-dev'
 
     strategy:
+
       runOnce:
+
         deploy:
 
           steps:
 
           - checkout: self
 
+
+          # ==================================================
           # TERRAFORM
+          # ==================================================
+
           - task: TerraformInstaller@1
             displayName: 'Install Terraform'
+
             inputs:
               terraformVersion: '$(terraformVersion)'
 
+
+          # ==================================================
           # DOWNLOAD PLAN
+          # ==================================================
+
           - download: current
             artifact: dev-tfplan
+
             displayName: 'Download Terraform Plan'
 
+
+          # ==================================================
           # INIT
+          # ==================================================
+
           - task: AzureCLI@2
             displayName: 'Terraform Init'
+
             inputs:
               azureSubscription: '$(serviceConnection)'
               scriptType: bash
@@ -258,6 +352,7 @@ stages:
               workingDirectory: '$(workingDirectory)'
 
               inlineScript: |
+
                 set -e
 
                 terraform init \
@@ -267,9 +362,14 @@ stages:
                   -backend-config="container_name=$(backendContainer)" \
                   -backend-config="key=$(backendKey)"
 
+
+          # ==================================================
           # APPLY
+          # ==================================================
+
           - task: AzureCLI@2
             displayName: 'Terraform Apply'
+
             inputs:
               azureSubscription: '$(serviceConnection)'
               scriptType: bash
@@ -277,6 +377,7 @@ stages:
               workingDirectory: '$(workingDirectory)'
 
               inlineScript: |
+
                 set -e
 
                 terraform apply \

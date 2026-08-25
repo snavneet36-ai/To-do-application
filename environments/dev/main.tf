@@ -34,6 +34,10 @@ module "networking" {
     var.sql_vm_subnet_address_prefixes
   )
 
+  private_endpoint_subnet_name = var.private_endpoint_subnet_name
+
+  private_endpoint_subnet_address_prefixes = var.private_endpoint_subnet_address_prefixes
+
   nsg_name = var.nsg_name
 
   location            = var.location
@@ -69,6 +73,9 @@ module "key_vault" {
   tenant_id = data.azurerm_client_config.current.tenant_id
 
   app_service_principal_id = module.app_service.principal_id
+
+  private_endpoint_subnet_id = module.networking.private_endpoint_subnet_id
+  virtual_network_id         = module.networking.vnet_id
 
   environment = var.environment
   tags        = var.common_tags
@@ -119,7 +126,7 @@ resource "azurerm_key_vault_secret" "sql_vm_admin_password" {
   value        = random_password.sql_vm_admin.result
   key_vault_id = module.key_vault.key_vault_id
 
-  depends_on = [
-    module.key_vault
-  ]
+  content_type = "SQL VM administrator password"
+
+  expiration_date = timeadd(timestamp(), "8760h")
 }

@@ -114,3 +114,18 @@ variable "sql_vm_name" {
   description = "SQL Server VM name"
   type        = string
 }
+
+variable "private_endpoint_subnet_name" {
+  description = "Private endpoint subnet name"
+  type        = string
+}
+
+variable "private_endpoint_subnet_address_prefixes" {
+  description = "Private endpoint subnet CIDR"
+  type        = list(string)
+}
+
+variable "sql_vm_password_expiration_date" {
+  description = "Expiration date for SQL VM administrator password"
+  type        = string
+}
