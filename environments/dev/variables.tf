@@ -114,11 +114,3 @@ variable "sql_vm_name" {
   description = "SQL Server VM name"
   type        = string
 }
-
-
-
-variable "sql_vm_admin_password" {
-  description = "SQL VM administrator password"
-  type        = string
-  sensitive   = true
-}

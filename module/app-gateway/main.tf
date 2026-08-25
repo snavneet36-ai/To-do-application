@@ -98,30 +98,30 @@ resource "azurerm_application_gateway" "this" {
   }
 
   backend_http_settings {
-  name                  = "app-service-https-settings"
-  cookie_based_affinity = "Disabled"
+    name                  = "app-service-https-settings"
+    cookie_based_affinity = "Disabled"
 
-  port     = 443
-  protocol = "Https"
+    port     = 443
+    protocol = "Https"
 
-  request_timeout = 30
+    request_timeout = 30
 
-  probe_name = "app-service-health-probe"
+    probe_name = "app-service-health-probe"
 
-  host_name = var.backend_hostname
-}
+    host_name = var.backend_hostname
+  }
 
-probe {
-  name                = "app-service-health-probe"
-  protocol            = "Https"
-  path                = "/"
+  probe {
+    name     = "app-service-health-probe"
+    protocol = "Https"
+    path     = "/"
 
-  interval            = 30
-  timeout             = 20
-  unhealthy_threshold = 3
+    interval            = 30
+    timeout             = 20
+    unhealthy_threshold = 3
 
-  host = var.backend_hostname
-}
+    host = var.backend_hostname
+  }
 
   tags = merge(
     var.tags,

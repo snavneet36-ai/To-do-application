@@ -102,8 +102,24 @@ module "sql_vm" {
   vm_size = var.sql_vm_size
 
   admin_username = var.sql_vm_admin_username
-  admin_password = var.sql_vm_admin_password
+  admin_password = random_password.sql_vm_admin.result
 
   environment = var.environment
   tags        = var.common_tags
+}
+
+resource "random_password" "sql_vm_admin" {
+  length           = 24
+  special          = true
+  override_special = "!@#$%&*()-_=+"
+}
+
+resource "azurerm_key_vault_secret" "sql_vm_admin_password" {
+  name         = "sql-vm-admin-password"
+  value        = random_password.sql_vm_admin.result
+  key_vault_id = module.key_vault.key_vault_id
+
+  depends_on = [
+    module.key_vault
+  ]
 }

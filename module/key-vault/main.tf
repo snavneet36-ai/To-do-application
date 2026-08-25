@@ -27,3 +27,4 @@ resource "azurerm_role_assignment" "app_service_secrets_user" {
   role_definition_name = "Key Vault Secrets User"
   principal_id         = var.app_service_principal_id
 }
+

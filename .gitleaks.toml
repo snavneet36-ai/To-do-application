@@ -1,0 +1,11 @@
+title = "Azure Todo Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow known non-secret Terraform configuration"
+paths = [
+  '''\.terraform/''',
+  '''\.terraform\.lock\.hcl$'''
+]

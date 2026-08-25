@@ -1,0 +1,284 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  terraformVersion: '1.15.8'
+  workingDirectory: '$(System.DefaultWorkingDirectory)/environments/dev'
+  serviceConnection: 'To-do-application'
+
+  backendResourceGroup: 'rg-terraform-state'
+  backendStorageAccount: 'sttfstateazuretododev'
+  backendContainer: 'tfstate'
+  backendKey: 'dev.tfstate'
+
+stages:
+
+# ==========================================================
+# 1. SECURITY
+# ==========================================================
+
+- stage: Security
+  displayName: 'Security Scanning'
+
+  jobs:
+  - job: SecurityScan
+    displayName: 'Gitleaks Checkov tfsec SAST'
+
+    steps:
+
+    - checkout: self
+      fetchDepth: 0
+
+    # GITLEAKS
+    - bash: |
+        set -e
+
+        GITLEAKS_VERSION="8.28.0"
+
+        curl -sSL \
+          -o /tmp/gitleaks.tar.gz \
+          "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+
+        tar -xzf /tmp/gitleaks.tar.gz -C /tmp
+
+        sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+
+        gitleaks version
+
+        gitleaks detect \
+          --source="$(Build.SourcesDirectory)" \
+          --redact \
+          --no-banner
+
+      displayName: 'Gitleaks - Secret Scan'
+
+    # INSTALL SECURITY TOOLS
+    - bash: |
+        python3 -m pip install --upgrade pip
+        pip3 install checkov semgrep
+
+        checkov --version
+        semgrep --version
+
+      displayName: 'Install Checkov and Semgrep'
+
+    # CHECKOV
+    - bash: |
+        cd "$(Build.SourcesDirectory)"
+
+        checkov \
+          --directory . \
+          --framework terraform \
+          --download-external-modules true \
+          --quiet
+
+      displayName: 'Checkov - IaC Security'
+
+    # TFSEC
+    - bash: |
+        set -e
+
+        TFSEC_VERSION="1.28.14"
+
+        curl -sSL \
+          -o /tmp/tfsec \
+          "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec-linux-amd64"
+
+        sudo install /tmp/tfsec /usr/local/bin/tfsec
+
+        tfsec --version
+
+        tfsec "$(Build.SourcesDirectory)"
+
+      displayName: 'tfsec - Terraform Security'
+
+    # SEMGREP SAST
+    - bash: |
+        cd "$(Build.SourcesDirectory)"
+
+        semgrep \
+          --config=p/terraform \
+          --error \
+          --metrics=off \
+          .
+
+      displayName: 'Semgrep - SAST'
+
+
+# ==========================================================
+# 2. TERRAFORM PLAN
+# ==========================================================
+
+- stage: TerraformPlan
+  displayName: 'Terraform Plan'
+
+  dependsOn: Security
+  condition: succeeded()
+
+  jobs:
+  - job: Plan
+    displayName: 'Terraform Init Validate Plan'
+
+    steps:
+
+    - checkout: self
+
+    # INSTALL TERRAFORM
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+
+    # FORMAT
+    - bash: |
+        cd "$(workingDirectory)"
+
+        terraform fmt \
+          -check \
+          -recursive
+
+      displayName: 'Terraform Format Check'
+
+    # INIT
+    - task: AzureCLI@2
+      displayName: 'Terraform Init'
+      inputs:
+        azureSubscription: '$(serviceConnection)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: '$(workingDirectory)'
+
+        inlineScript: |
+          set -e
+
+          terraform init \
+            -reconfigure \
+            -backend-config="resource_group_name=$(backendResourceGroup)" \
+            -backend-config="storage_account_name=$(backendStorageAccount)" \
+            -backend-config="container_name=$(backendContainer)" \
+            -backend-config="key=$(backendKey)"
+
+    # VALIDATE
+    - task: AzureCLI@2
+      displayName: 'Terraform Validate'
+      inputs:
+        azureSubscription: '$(serviceConnection)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: '$(workingDirectory)'
+
+        inlineScript: |
+          set -e
+
+          terraform validate
+
+    # PLAN
+    - task: AzureCLI@2
+      displayName: 'Terraform Plan'
+      inputs:
+        azureSubscription: '$(serviceConnection)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: '$(workingDirectory)'
+
+        inlineScript: |
+          set -e
+
+          terraform plan \
+            -var-file="dev.tfvars" \
+            -out="tfplan"
+
+    # VERIFY PLAN
+    - bash: |
+        cd "$(workingDirectory)"
+
+        terraform show -json tfplan > tfplan.json
+
+        checkov \
+          --file tfplan.json \
+          --framework terraform_plan \
+          --quiet
+
+      displayName: 'Checkov - Plan Verification'
+
+    # PUBLISH PLAN
+    - publish: '$(workingDirectory)/tfplan'
+      artifact: dev-tfplan
+      displayName: 'Publish Terraform Plan'
+
+
+# ==========================================================
+# 3. APPLY
+# ==========================================================
+
+- stage: TerraformApply
+  displayName: 'Terraform Apply'
+
+  dependsOn: TerraformPlan
+  condition: succeeded()
+
+  jobs:
+
+  - deployment: Apply
+    displayName: 'Apply Dev Infrastructure'
+
+    environment: 'terraform-dev'
+
+    strategy:
+      runOnce:
+        deploy:
+
+          steps:
+
+          - checkout: self
+
+          # TERRAFORM
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          # DOWNLOAD PLAN
+          - download: current
+            artifact: dev-tfplan
+            displayName: 'Download Terraform Plan'
+
+          # INIT
+          - task: AzureCLI@2
+            displayName: 'Terraform Init'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: '$(workingDirectory)'
+
+              inlineScript: |
+                set -e
+
+                terraform init \
+                  -reconfigure \
+                  -backend-config="resource_group_name=$(backendResourceGroup)" \
+                  -backend-config="storage_account_name=$(backendStorageAccount)" \
+                  -backend-config="container_name=$(backendContainer)" \
+                  -backend-config="key=$(backendKey)"
+
+          # APPLY
+          - task: AzureCLI@2
+            displayName: 'Terraform Apply'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: '$(workingDirectory)'
+
+              inlineScript: |
+                set -e
+
+                terraform apply \
+                  -auto-approve \
+                  "$(Pipeline.Workspace)/dev-tfplan/tfplan"
