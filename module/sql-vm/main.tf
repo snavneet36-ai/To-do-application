@@ -3,6 +3,7 @@ resource "azurerm_network_interface" "sql_vm" {
   location            = var.location
   resource_group_name = var.resource_group_name
 
+
   ip_configuration {
     name                          = "internal"
     subnet_id                     = var.subnet_id
@@ -16,6 +17,7 @@ resource "azurerm_network_interface" "sql_vm" {
       ManagedBy   = "Terraform"
     }
   )
+
 }
 
 
@@ -54,6 +56,7 @@ resource "azurerm_network_interface_security_group_association" "sql_vm" {
 
 resource "azurerm_windows_virtual_machine" "sql_vm" {
   name                = var.vm_name
+  computer_name       = "sqlvmdev"
   resource_group_name = var.resource_group_name
   location            = var.location
   size                = var.vm_size

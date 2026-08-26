@@ -15,7 +15,6 @@ resource "azurerm_public_ip" "this" {
   )
 }
 
-
 resource "azurerm_application_gateway" "this" {
   name                = var.app_gateway_name
   location            = var.location
@@ -42,8 +41,8 @@ resource "azurerm_application_gateway" "this" {
   }
 
   frontend_port {
-    name = "http-port"
-    port = 80
+    name = "https-port"
+    port = 443
   }
 
   backend_address_pool {
@@ -53,41 +52,42 @@ resource "azurerm_application_gateway" "this" {
 
   probe {
     name                = "app-service-health-probe"
-    protocol            = "Http"
+    protocol            = "Https"
     path                = "/"
     interval            = 30
     timeout             = 20
     unhealthy_threshold = 3
-
-    host = var.backend_hostname
+    host                = var.backend_hostname
   }
 
   backend_http_settings {
-    name                  = "app-service-http-settings"
+    name                  = "app-service-https-settings"
     cookie_based_affinity = "Disabled"
-    port                  = 80
-    protocol              = "Http"
+    port                  = 443
+    protocol              = "Https"
     request_timeout       = 30
 
     probe_name = "app-service-health-probe"
-
-    host_name = var.backend_hostname
+    host_name  = var.backend_hostname
   }
 
   http_listener {
-    name                           = "http-listener"
+    name                           = "https-listener"
     frontend_ip_configuration_name = "public-frontend"
-    frontend_port_name             = "http-port"
-    protocol                       = "Http"
+    frontend_port_name             = "https-port"
+    protocol                       = "Https"
+
+    # Add ssl_certificate block here if you have an SSL certificate.
+    # ssl_certificate_name = "app-gateway-cert"
   }
 
   request_routing_rule {
     name                       = "app-service-routing-rule"
     priority                   = 100
     rule_type                  = "Basic"
-    http_listener_name         = "http-listener"
+    http_listener_name         = "https-listener"
     backend_address_pool_name  = "app-service-backend"
-    backend_http_settings_name = "app-service-http-settings"
+    backend_http_settings_name = "app-service-https-settings"
   }
 
   waf_configuration {
@@ -95,32 +95,6 @@ resource "azurerm_application_gateway" "this" {
     firewall_mode    = "Prevention"
     rule_set_type    = "OWASP"
     rule_set_version = "3.2"
-  }
-
-  backend_http_settings {
-    name                  = "app-service-https-settings"
-    cookie_based_affinity = "Disabled"
-
-    port     = 443
-    protocol = "Https"
-
-    request_timeout = 30
-
-    probe_name = "app-service-health-probe"
-
-    host_name = var.backend_hostname
-  }
-
-  probe {
-    name     = "app-service-health-probe"
-    protocol = "Https"
-    path     = "/"
-
-    interval            = 30
-    timeout             = 20
-    unhealthy_threshold = 3
-
-    host = var.backend_hostname
   }
 
   tags = merge(
